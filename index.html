@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Road Racer Legacy</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+        body {
+            background-color: #111;
+            color: #fff;
+            font-family: 'Press Start 2P', monospace;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+            touch-action: none;
+        }
+
+        #game-container {
+            position: relative;
+            box-shadow: 0 0 30px rgba(0,0,0,1);
+            border: 4px solid #333;
+            max-width: 100%;
+            max-height: 95vh;
+            aspect-ratio: 2 / 3;
+        }
+
+        canvas {
+            display: block;
+            background-color: #000;
+            width: auto;
+            height: auto;
+            max-width: 100%;
+            max-height: 90vh;
+        }
+
+        #ui-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        .hud-top {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px;
+            font-size: 12px;
+            text-shadow: 2px 2px 0 #000;
+        }
+
+        .fuel-container {
+            position: absolute;
+            right: 10px;
+            top: 50px;
+            width: 20px;
+            height: 150px;
+            border: 2px solid #fff;
+            background: #222;
+            display: flex;
+            flex-direction: column-reverse;
+            border-radius: 2px;
+        }
+
+        #fuel-bar {
+            width: 100%;
+            background: linear-gradient(to top, #f00, #ff0, #0f0);
+            height: 100%;
+            transition: height 0.1s;
+        }
+
+        .fuel-label {
+            position: absolute;
+            right: 10px;
+            top: 35px;
+            font-size: 10px;
+            color: #fff;
+        }
+
+        #message-area {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            width: 90%;
+            pointer-events: auto;
+            background: rgba(0,0,0,0.7);
+            padding: 20px;
+            border: 2px solid #fff;
+        }
+
+        h1 {
+            font-size: 24px;
+            margin-bottom: 20px;
+            color: #ff3333;
+            text-shadow: 2px 2px 0 #fff;
+        }
+
+        .blink {
+            animation: blinker 1s linear infinite;
+        }
+
+        @keyframes blinker {
+            50% { opacity: 0; }
+        }
+
+        .btn {
+            background: #fff;
+            color: #000;
+            border: none;
+            padding: 15px 30px;
+            font-family: inherit;
+            font-size: 16px;
+            cursor: pointer;
+            text-transform: uppercase;
+            box-shadow: 4px 4px 0 #888;
+        }
+
+        #mobile-controls {
+            display: none;
+            position: absolute;
+            bottom: 20px;
+            width: 100%;
+            height: 120px;
+            pointer-events: auto;
+            justify-content: space-between;
+            padding: 0 20px;
+            box-sizing: border-box;
+        }
+
+        .touch-btn {
+            width: 70px;
+            height: 70px;
+            background: rgba(255, 255, 255, 0.2);
+            border: 2px solid rgba(255, 255, 255, 0.5);
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 24px;
+            user-select: none;
+        }
+
+        @media (hover: none) and (pointer: coarse) {
+            #mobile-controls {
+                display: flex;
+            }
+        }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <canvas id="gameCanvas" width="600" height="900"></canvas>
+    
+    <div id="ui-overlay">
+        <div class="hud-top">
+            <div id="score">SCORE: 000000</div>
+            <div id="hiscore">HI: 000000</div>
+        </div>
+        <div class="fuel-label">FUEL</div>
+        <div class="fuel-container">
+            <div id="fuel-bar"></div>
+        </div>
+
+        <div id="message-area">
+            <h1>ROAD RACER<br>LEGACY</h1>
+            <p class="blink">PRESS START</p>
+            <button class="btn" id="start-btn">START GAME</button>
+            <p style="font-size: 10px; margin-top: 20px; line-height: 1.5;">
+                [PC] Drag / Arrows: Move / Z: Turbo<br>
+                [TOUCH] Drag or Buttons
+            </p>
+        </div>
+
+        <div id="mobile-controls">
+            <div class="touch-btn" id="btn-left">←</div>
+            <div class="touch-btn" id="btn-accel" style="background:rgba(255,50,50,0.3)">A</div>
+            <div class="touch-btn" id="btn-right">→</div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    
+    const scoreEl = document.getElementById('score');
+    const hiscoreEl = document.getElementById('hiscore');
+    const fuelBar = document.getElementById('fuel-bar');
+    const startBtn = document.getElementById('start-btn');
+    const msgArea = document.getElementById('message-area');
+    const titleText = msgArea.querySelector('h1');
+    const subText = msgArea.querySelector('p');
+
+    const btnLeft = document.getElementById('btn-left');
+    const btnRight = document.getElementById('btn-right');
+    const btnAccel = document.getElementById('btn-accel');
+
+    const BASE_ROAD_WIDTH = 380;
+    const AREAS = [
+        { name: 'CITY', grassColor: '#2b2b2b', roadColor: '#4d4d4d', wallColor: '#999999', wallStripeColor: '#ff0000', roadWidthRange: [320, 420] },
+        { name: 'FOREST', grassColor: '#1a3c1a', roadColor: '#555555', wallColor: '#ccc', wallStripeColor: '#f00', roadWidthRange: [BASE_ROAD_WIDTH, BASE_ROAD_WIDTH] },
+        { name: 'DESERT', grassColor: '#cfa63b', roadColor: '#6e6e6e', wallColor: '#e0c17a', wallStripeColor: '#a00000', roadWidthRange: [380, 480] },
+        { name: 'MOUNTAIN', grassColor: '#444c4c', roadColor: '#404040', wallColor: '#999999', wallStripeColor: '#fff', roadWidthRange: [280, 380] }
+    ];
+
+    const CAR_W = 32;
+    const CAR_H = 48;
+    
+    let gameState = 'START';
+    let frameCount = 0;
+    let score = 0;
+    let hiscore = 0;
+    let distance = 0;
+    
+    let currentRoadWidth = BASE_ROAD_WIDTH;
+    let targetRoadWidth = BASE_ROAD_WIDTH;
+    let roadChangeTimer = 300;
+    let roadOffset = 0;
+    
+    let currentAreaIndex = 1; 
+    let currentArea = AREAS[currentAreaIndex];
+    let areaSwitchDistance = 5000;
+    
+    let player = {
+        x: canvas.width / 2,
+        y: canvas.height - 150, 
+        speed: 0,
+        maxSpeed: 12,
+        turboSpeed: 20,
+        accel: 0.2,
+        turboAccel: 0.4,
+        friction: 0.1,
+        dx: 0,
+        steerSpeed: 5,
+        fuel: 100,
+        state: 'NORMAL',
+        spinTimer: 0,
+        invincible: 0,
+        isWallSkidding: false
+    };
+
+    const keys = { ArrowLeft: false, ArrowRight: false, ArrowUp: false, ArrowDown: false, z: false, Z: false, " ": false };
+    let isDragging = false;
+    let lastDragX = 0;
+    let enemies = [];
+    let particles = [];
+
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    let audioCtx = new AudioContext();
+    
+    function playSound(type) {
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        const now = audioCtx.currentTime;
+        if (type === 'bonus') {
+            osc.type = 'square'; osc.frequency.setValueAtTime(880, now); osc.frequency.exponentialRampToValueAtTime(1760, now + 0.1);
+            gain.gain.setValueAtTime(0.1, now); gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
+            osc.start(now); osc.stop(now + 0.1);
+        } else if (type === 'skid') {
+            osc.type = 'triangle'; osc.frequency.setValueAtTime(400, now); osc.frequency.linearRampToValueAtTime(200, now + 0.2);
+            gain.gain.setValueAtTime(0.1, now); osc.start(now); osc.stop(now + 0.2);
+        }
+    }
+
+    window.addEventListener('keydown', (e) => { if(keys.hasOwnProperty(e.key)) keys[e.key] = true; });
+    window.addEventListener('keyup', (e) => { if(keys.hasOwnProperty(e.key)) keys[e.key] = false; });
+
+    function getCanvasX(e) {
+        let clientX = e.clientX || (e.touches && e.touches[0].clientX);
+        const rect = canvas.getBoundingClientRect();
+        return (clientX - rect.left) * (canvas.width / rect.width);
+    }
+
+    function startDrag(e) {
+        if (gameState !== 'PLAYING' || e.target.classList.contains('touch-btn')) return;
+        if (e.touches) e.preventDefault(); 
+        isDragging = true;
+        lastDragX = getCanvasX(e);
+    }
+
+    function stopDrag() { isDragging = false; }
+
+    function dragMove(e) {
+        if (!isDragging || gameState !== 'PLAYING') return;
+        const currentX = getCanvasX(e);
+        player.x += (currentX - lastDragX);
+        lastDragX = currentX;
+    }
+    
+    canvas.addEventListener('mousedown', startDrag);
+    window.addEventListener('mouseup', stopDrag);
+    canvas.addEventListener('mousemove', dragMove);
+    canvas.addEventListener('touchstart', startDrag);
+    window.addEventListener('touchend', stopDrag);
+    canvas.addEventListener('touchmove', dragMove);
+
+    const handleTouch = (btn, key, active) => {
+        const events = active ? ['touchstart', 'mousedown'] : ['touchend', 'mouseup'];
+        events.forEach(evt => btn.addEventListener(evt, (e) => { e.preventDefault(); keys[key] = active; }));
+    };
+
+    handleTouch(btnLeft, 'ArrowLeft', true); handleTouch(btnLeft, 'ArrowLeft', false);
+    handleTouch(btnRight, 'ArrowRight', true); handleTouch(btnRight, 'ArrowRight', false);
+    handleTouch(btnAccel, 'z', true); handleTouch(btnAccel, 'z', false);
+
+    startBtn.addEventListener('click', startGame);
+
+    function startGame() {
+        gameState = 'PLAYING';
+        player.fuel = 100;
+        player.speed = 0;
+        player.x = canvas.width / 2;
+        player.state = 'NORMAL';
+        player.isWallSkidding = false;
+        score = 0; distance = 0; enemies = []; particles = [];
+        msgArea.style.display = 'none';
+        currentRoadWidth = BASE_ROAD_WIDTH;
+        targetRoadWidth = BASE_ROAD_WIDTH;
+        currentAreaIndex = 1; currentArea = AREAS[currentAreaIndex];
+        areaSwitchDistance = 5000;
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        lastTime = performance.now();
+        requestAnimationFrame(gameLoop);
+    }
+
+    function gameOver() {
+        gameState = 'GAMEOVER';
+        msgArea.style.display = 'block';
+        titleText.innerHTML = 'GAME OVER';
+        subText.innerHTML = `SCORE: ${Math.floor(score)}`;
+        startBtn.textContent = "RETRY";
+        if (score > hiscore) {
+            hiscore = Math.floor(score);
+            hiscoreEl.textContent = `HI: ${hiscore.toString().padStart(6, '0')}`;
+        }
+        draw();
+    }
+
+    function spawnEnemy() {
+        const roadX = (canvas.width - currentRoadWidth) / 2;
+        const laneX = roadX + (Math.random() * (currentRoadWidth - CAR_W));
+        const r = Math.random();
+        let type = 'SLOW', speed = 2, color = '#4488ff';
+        if (r > 0.96) { type = 'FUEL'; speed = 3; color = '#ff44cc'; }
+        else if (r > 0.7) { type = 'FAST'; speed = 6; color = '#cc3333'; }
+        enemies.push({ x: laneX, y: -100, w: CAR_W, h: CAR_H, type, speed, color });
+    }
+
+    function createParticles(x, y, color, count) {
+        for(let i=0; i<count; i++) {
+            particles.push({ x, y, vx: (Math.random()-0.5)*4, vy: (Math.random()-0.5)*4, life: 1.0, color });
+        }
+    }
+    
+    function update() {
+        if (gameState !== 'PLAYING') return;
+        
+        if (distance > areaSwitchDistance) {
+            currentAreaIndex = (currentAreaIndex + 1) % AREAS.length;
+            currentArea = AREAS[currentAreaIndex];
+            areaSwitchDistance += 5000;
+        }
+
+        roadChangeTimer--;
+        if (roadChangeTimer <= 0) {
+            const [minW, maxW] = currentArea.roadWidthRange;
+            targetRoadWidth = minW + Math.random() * (maxW - minW);
+            roadChangeTimer = 300 + Math.random() * 300;
+        }
+        currentRoadWidth += (targetRoadWidth - currentRoadWidth) * 0.01;
+        const roadX = (canvas.width - currentRoadWidth) / 2;
+
+        const isTurbo = keys.z || keys.Z || keys[" "];
+        if (isTurbo) {
+            if (player.speed < player.turboSpeed) player.speed += player.turboAccel;
+            player.fuel -= 0.05;
+        } else {
+            if (player.speed < player.maxSpeed) player.speed += player.accel * 0.5;
+            else player.speed -= player.friction;
+            player.fuel -= 0.02;
+        }
+        player.fuel -= 0.005;
+
+        if (player.fuel <= 0) {
+            player.speed -= 0.2;
+            if (player.speed <= 0) { player.speed = 0; gameOver(); }
+        }
+
+        if (player.state === 'NORMAL' || player.state === 'INVINCIBLE') {
+            let steer = player.steerSpeed * (player.speed / player.maxSpeed);
+            if (keys.ArrowLeft && !isDragging) player.x -= steer; 
+            if (keys.ArrowRight && !isDragging) player.x += steer;
+        } else if (player.state === 'SPIN') {
+            player.x += player.dx; player.speed *= 0.96; player.spinTimer--;
+            if (player.spinTimer <= 0) { player.state = 'INVINCIBLE'; player.invincible = 60; }
+        }
+
+        const leftBorder = roadX;
+        const rightBorder = roadX + currentRoadWidth - CAR_W;
+        if (player.x < leftBorder) { 
+            player.x = leftBorder; 
+            player.speed *= 0.9; 
+            if (!player.isWallSkidding && player.speed > 1) { 
+                playSound('skid'); 
+                player.isWallSkidding = true; 
+            }
+        } else if (player.x > rightBorder) { 
+            player.x = rightBorder; 
+            player.speed *= 0.9; 
+            if (!player.isWallSkidding && player.speed > 1) { 
+                playSound('skid'); 
+                player.isWallSkidding = true; 
+            }
+        } else {
+            player.isWallSkidding = false;
+        }
+
+        if (player.invincible > 0) player.invincible--;
+        if (player.invincible === 0 && player.state === 'INVINCIBLE') player.state = 'NORMAL';
+
+        roadOffset += player.speed;
+        if (roadOffset > 60) roadOffset = 0;
+        score += player.speed * 0.1;
+        distance += player.speed;
+
+        if (Math.random() < 0.025) spawnEnemy();
+
+        for (let i = enemies.length - 1; i >= 0; i--) {
+            let e = enemies[i];
+            e.y += (player.speed - e.speed);
+            if (e.y > canvas.height + 100) { enemies.splice(i, 1); score += 50; continue; }
+            if (checkRectCollision(player, e) && player.state !== 'SPIN') {
+                if (e.type === 'FUEL') {
+                    player.fuel = Math.min(100, player.fuel + 20);
+                    score += 500; enemies.splice(i, 1); playSound('bonus');
+                    createParticles(e.x + CAR_W/2, e.y + CAR_H/2, '#ff88cc', 10);
+                } else if (player.invincible <= 0) {
+                    playSound('skid'); player.state = 'SPIN'; player.spinTimer = 40;
+                    player.dx = (player.x > e.x) ? 4 : -4;
+                    createParticles(player.x + CAR_W/2, player.y + CAR_H/2, '#fff', 5);
+                }
+            }
+        }
+
+        for (let i = particles.length - 1; i >= 0; i--) {
+            let p = particles[i]; p.x += p.vx; p.y += p.vy + player.speed; p.life -= 0.05;
+            if(p.life <= 0) particles.splice(i, 1);
+        }
+
+        fuelBar.style.height = `${Math.max(0, player.fuel)}%`;
+        scoreEl.innerText = `SCORE: ${Math.floor(score).toString().padStart(6, '0')}`;
+    }
+
+    function checkRectCollision(r1, r2) {
+        return (r1.x < r2.x + CAR_W && r1.x + CAR_W > r2.x && r1.y < r2.y + CAR_H && r1.y + CAR_H > r2.y);
+    }
+
+    function drawCar(ctx, x, y, color, type) {
+        ctx.fillStyle = 'rgba(0,0,0,0.3)';
+        ctx.fillRect(x + 4, y + 4, CAR_W, CAR_H);
+        ctx.fillStyle = color;
+        if (type === 'FUEL' && Math.floor(Date.now() / 150) % 2 === 0) ctx.fillStyle = '#fff';
+        ctx.fillRect(x, y, CAR_W, CAR_H);
+        ctx.fillStyle = '#000';
+        ctx.fillRect(x + 4, y + 6, CAR_W - 8, 8);
+        ctx.fillRect(x + 4, y + CAR_H - 12, CAR_W - 8, 4);
+        if (type === 'PLAYER') {
+            ctx.fillStyle = '#f00'; ctx.fillRect(x + 2, y + CAR_H - 4, 6, 3); ctx.fillRect(x + CAR_W - 8, y + CAR_H - 4, 6, 3);
+        }
+    }
+
+    function draw() {
+        const roadX = (canvas.width - currentRoadWidth) / 2;
+        ctx.fillStyle = currentArea.grassColor; 
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = currentArea.roadColor; 
+        ctx.fillRect(roadX, 0, currentRoadWidth, canvas.height);
+        ctx.fillStyle = currentArea.wallColor;
+        ctx.fillRect(roadX - 10, 0, 10, canvas.height);
+        ctx.fillRect(roadX + currentRoadWidth, 0, 10, canvas.height);
+        
+        let wallOff = roadOffset % 40;
+        ctx.fillStyle = currentArea.wallStripeColor;
+        for(let i = -1; i < canvas.height / 40 + 1; i++) {
+            let y = i * 40 + wallOff;
+            ctx.fillRect(roadX - 10, y, 10, 20);
+            ctx.fillRect(roadX + currentRoadWidth, y, 10, 20);
+        }
+
+        ctx.fillStyle = 'rgba(255,255,255,0.3)';
+        let laneOff = roadOffset % 60;
+        for (let i = -1; i < canvas.height / 60 + 1; i++) {
+            let y = i * 60 + laneOff;
+            ctx.fillRect(roadX + currentRoadWidth/2 - 2, y, 4, 30);
+        }
+
+        enemies.forEach(e => drawCar(ctx, e.x, e.y, e.color, e.type));
+
+        if (player.state !== 'CRASH') {
+            if (player.state === 'INVINCIBLE' && Math.floor(frameCount / 4) % 2 === 0) {}
+            else {
+                if (player.state === 'SPIN') {
+                    ctx.save(); ctx.translate(player.x + CAR_W/2, player.y + CAR_H/2);
+                    ctx.rotate(player.spinTimer * 0.4); drawCar(ctx, -CAR_W/2, -CAR_H/2, '#ff3333', 'PLAYER'); ctx.restore();
+                } else {
+                    drawCar(ctx, player.x, player.y, '#ff3333', 'PLAYER');
+                }
+            }
+        }
+        particles.forEach(p => { ctx.fillStyle = p.color; ctx.globalAlpha = p.life; ctx.fillRect(p.x, p.y, 4, 4); ctx.globalAlpha = 1.0; });
+
+        ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(canvas.width - 110, canvas.height - 45, 100, 35);
+        ctx.fillStyle = '#fff'; ctx.font = '10px "Press Start 2P"';
+        ctx.fillText(`${Math.floor(player.speed * 15)} KM/H`, canvas.width - 105, canvas.height - 22);
+    }
+
+    let lastTime = 0;
+    function gameLoop(timestamp) {
+        if (gameState === 'PLAYING') {
+            update(); draw(); frameCount++;
+            requestAnimationFrame(gameLoop);
+        }
+    }
+    draw();
+</script>
+</body>
+</html>
+```eof
+
+右側の画面（エディタ）に `index.html` が表示されました！
+
+**手順:**
+1. 右側の画面でコードを全選択（`Ctrl + A` または `Cmd + A`）してコピーします。
+2. お使いのパソコンで「メモ帳」を開き、コードを貼り付けて `index.html` という名前で保存してください。
+
+保存ができたら、先ほどの GitHub の画面（またはガイド）に移動してアップロードを進めてみてください。進め方で引っかかる部分があればいつでも教えてくださいね！
